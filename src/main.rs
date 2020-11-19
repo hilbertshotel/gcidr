@@ -13,7 +13,7 @@ fn main() {
         1 => 0,
         2 => stdin_match(&input[1]),
         3 => file_match(&input[1], &input[2]),
-        _ => 10,
+        _ => 4,
     };
 
     if output != 1 {
@@ -23,53 +23,83 @@ fn main() {
 
 
 fn stdin_match(pattern: &str) -> u8 {
-    if !is_valid(pattern) {
-        2
-    } else {
+    let mut output = 1;
+    loop {
+
+        if !ipv4::validate_pattern(pattern) {output=2; break;} 
         let stdin = io::stdin();
+       
+        let (pattern, range) = create_variables(pattern);
+
         for line in stdin.lock().lines() {
             let ip = match line {
                 Ok(ip) => ip,
                 Err(error) => panic!(error),
             };
-            if in_range(&ip, pattern) {
-                println!("{}", ip);
-            } 
+            
+            if !ipv4::validate_ip(&ip) {continue;}
+            if ipv4::in_range(&ip, &pattern, &range) {println!("{}", ip);}
         }
-        1
+
+        break;
     }
+    output
 }
 
 
 fn file_match(pattern: &str, filename: &str) -> u8 {
-    if !Path::new(filename).exists() {
-        3
-    } else if !is_valid(pattern) {
-        2
-    } else {
+    let mut output: u8 = 1;
+    loop {
+        
+        if !Path::new(filename).exists() {output=3; break;}
+        if !ipv4::validate_pattern(pattern) {output=2; break;}
+
         let file = OpenOptions::new()
             .read(true)
             .open(filename)
             .expect("error: open file");
 
+        let (pattern, range) = create_variables(pattern);
+
         let file = BufReader::new(file);
         for line in file.lines() {
             let ip = line.expect("error: read line");
-            if in_range(&ip, pattern) {
-                println!("{}", ip);
-            }
+            if !ipv4::validate_ip(&ip) {continue;}
+            if ipv4::in_range(&ip, &pattern, &range) {println!("{}", ip);}
         }
-        1
+
+        break;
     }
+    output
 }
 
 
-fn is_valid(pattern: &str) -> bool {
-    ipv4::validate(pattern)
+fn create_variables(pattern: &str) -> (Vec<&str>, Vec<u32>) {
+    let pattern: Vec<&str> = pattern.split(|c| c == '.' || c == '/').collect();
+    let cidr: u8 = pattern[4].parse().unwrap();
+    let pattern = pattern[..=3].to_vec();
+    let range: Vec<u32> = create_range(cidr);
+    (pattern, range)
 }
 
-fn in_range(_line: &str, _pattern: &str) -> bool {
-    true
+
+fn create_range(mut cidr: u8) -> Vec<u32> {
+    let mut bin: [u8; 32] = [1; 32];
+    let mut i: usize = 0;
+    while cidr > 0 {
+        bin[i] = 0;
+        cidr -= 1;
+        i += 1;
+    }
+    
+    let bin = [&bin[..8], &bin[8..16], &bin[16..24], &bin[24..]];
+    let mut range: Vec<u32> = Vec::new();
+    for byte in &bin {
+        let b: u8 = byte.iter().sum();
+        let b = (2_u32.pow(b.into())) - 1;
+        range.push(b);
+    }
+    range
 }
 
 
